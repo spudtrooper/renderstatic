@@ -13,9 +13,11 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/pkg/errors"
 	"github.com/spudtrooper/goutil/check"
 	"github.com/spudtrooper/goutil/flags"
 	"github.com/spudtrooper/goutil/or"
+	"github.com/spudtrooper/goutil/request"
 	goutilselenium "github.com/spudtrooper/goutil/selenium"
 	"github.com/tebeka/selenium"
 )
@@ -28,6 +30,7 @@ var (
 	page            = flags.String("page", "page to render")
 	selector        = flags.String("selector", "CSS selector for which to wait")
 	outfile         = flags.String("outfile", "file to which we write HTML")
+	noserver        = flags.Bool("noserver", "don't start a server")
 )
 
 func startLocalServerr(ctx context.Context) error {
@@ -41,6 +44,10 @@ func startLocalServerr(ctx context.Context) error {
 	return nil
 }
 
+func uri() string {
+	return fmt.Sprintf("http://localhost:%d/%s", *port, *page)
+}
+
 func waitForRender() error {
 	wd, cancel, err := goutilselenium.MakeWebDriver(goutilselenium.MakeWebDriverOptions{
 		Verbose:  *seleniumVerbose,
@@ -51,7 +58,7 @@ func waitForRender() error {
 	}
 	defer cancel()
 
-	if err := wd.Get(fmt.Sprintf("http://localhost:%d/%s", *port, *page)); err != nil {
+	if err := wd.Get(uri()); err != nil {
 		return err
 	}
 
@@ -95,9 +102,17 @@ func waitForRender() error {
 }
 
 func realMain(ctx context.Context) error {
-	go func() {
-		check.Err(startLocalServerr(ctx))
-	}()
+	if *noserver {
+		log.Printf("skipping local server")
+		u := uri()
+		if _, err := request.Get(u, nil); err != nil {
+			return errors.Errorf("could not contact local server: %s", u)
+		}
+	} else {
+		go func() {
+			check.Err(startLocalServerr(ctx))
+		}()
+	}
 
 	if err := waitForRender(); err != nil {
 		return err
